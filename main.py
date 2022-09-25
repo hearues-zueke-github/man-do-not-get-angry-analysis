@@ -63,6 +63,7 @@ def pix_alpha_blending_many(pix_dst, l_pix_src, l_y, l_x):
 		pix_alpha_blending(pix_dst=pix_dst, pix_src=pix_src, y=y, x=x)
 
 
+# TODO: refactor game_field more cleaner
 class GameField:
 	def __init__(self, h, w):
 		self.pix = np.zeros((h, w, 4), dtype=np.uint8)
@@ -70,18 +71,23 @@ class GameField:
 		self.temp_dir_path = os.path.join(os.path.join(TEMP_DIR, 'man_do_not_get_angry'), datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d_%H:%M:%S:%f'))
 		if not os.path.exists(self.temp_dir_path):
 			os.makedirs(self.temp_dir_path)
+		self.l_player_color_finish = []
 
 
 	def save_next_field_image(self):
-		Image.fromarray(self.pix).save(os.path.join(self.temp_dir_path, f'field_nr_{self.play_field_number:03}.png'))
+		Image.fromarray(self.pix).save(os.path.join(self.temp_dir_path, f'field_nr_{self.play_field_number:05}.png'))
+		print(f"Saving next frame: self.play_field_number: {self.play_field_number}")
 		self.play_field_number += 1
 
 
-	def move_piece_from_starting_field_cell(self, piece: 'Piece', amount_move: int):
+	def move_piece_to_next_field_cell(self, piece: 'Piece', amount_move: int):
 		current_field_cell = piece.current_field_cell
 		other_piece, is_moved = current_field_cell.move_piece_to_next_field_cell(amount_move=amount_move)
 		assert is_moved
 		next_field_cell = piece.current_field_cell
+
+		if next_field_cell.is_finish_cell:
+			piece.state_finish = True
 
 		assert (other_piece is None) or (other_piece is not None and other_piece.color != piece.color)
 
@@ -96,7 +102,7 @@ class GameField:
 			pix_alpha_blending(pix_dst=self.pix, pix_src=piece.d_tile_set["select"], y=pos_y_1, x=pos_x_1)
 		else:
 			pix_alpha_blending(pix_dst=self.pix, pix_src=piece.d_tile_set["non_select"], y=pos_y_1, x=pos_x_1)
-		self.save_next_field_image()
+		# self.save_next_field_image()
 		
 		pix_alpha_blending(pix_dst=self.pix, pix_src=current_field_cell.d_tile_set["empty_cell"], y=pos_y_1, x=pos_x_1)
 		pix_alpha_blending(pix_dst=self.pix, pix_src=next_field_cell.d_tile_set["empty_cell"], y=pos_y_2, x=pos_x_2)
@@ -109,7 +115,7 @@ class GameField:
 			pos_y_3 = home_field_cell.pos_y
 			pos_x_3 = home_field_cell.pos_x
 			pix_alpha_blending(pix_dst=self.pix, pix_src=other_piece.d_tile_set["non_select"], y=pos_y_3, x=pos_x_3)
-		self.save_next_field_image()
+		# self.save_next_field_image()
 
 		piece.state_select = False
 		pix_alpha_blending(pix_dst=self.pix, pix_src=next_field_cell.d_tile_set["empty_cell"], y=pos_y_2, x=pos_x_2)
@@ -173,6 +179,9 @@ class FieldCell:
 			other_piece.home_field_cell.current_piece = other_piece
 				
 			other_piece.state_start = True
+		else:
+			if current_piece.state_start:
+				current_piece.state_start = False
 
 		current_piece.current_field_cell = next_field_cell # update the current_field_cell of the found current_piece
 
@@ -205,10 +214,12 @@ class Piece:
 
 	def __init__(
 		self,
+		player: 'Player',
 		name: str,
 		color: str,
 		number: int,
 	):
+		self.player = player
 		self.name = name
 		self.color = color
 		self.number = number
@@ -225,7 +236,13 @@ class Piece:
 
 
 	def check_if_next_move_is_possible(self, amount_move):
-		d_next_field = self.current_field_cell.d_player_color_to_d_next_field[self.color]
+		color = self.color
+		d_player_color_to_d_next_field = self.current_field_cell.d_player_color_to_d_next_field
+
+		if color not in d_player_color_to_d_next_field:
+			return False
+
+		d_next_field = d_player_color_to_d_next_field[color]
 
 		if amount_move not in d_next_field:
 			return False
@@ -238,6 +255,32 @@ class Piece:
 		return True
 
 
+class Player:
+	def __init__(self, color, amount_piece):
+		self.color = color
+		self.amount_piece = amount_piece
+		self.d_piece_nr_to_piece = {
+			number: Piece(
+				player=self,
+				name=f'piece_{color}_nr_{number}',
+				color=color,
+				number=number,
+			)
+			for number in range(1, amount_piece+1)
+		}
+		self.l_dice_sequence = [1, 2, 3, 4, 5, 6] # default l_dice_sequence
+		self.idx_dice = 0
+		self.amount_dice_used = 0
+		# TODO: add seed for RNG later too
+
+
+	def get_next_dice_number(self):
+		dice_number = self.l_dice_sequence[self.idx_dice]
+		self.idx_dice = (self.idx_dice + 1) % len(self.l_dice_sequence)
+		self.amount_dice_used += 1
+		return dice_number
+
+
 if __name__ == '__main__':
 	dir_img_path = os.path.join(CURRENT_WORKING_DIR, 'img')
 	assert os.path.exists(dir_img_path)
@@ -247,7 +290,7 @@ if __name__ == '__main__':
 
 	tile_size = 16
 	tiles_amount_h = amount_piece*2 + 3
-	tiles_amount_w = 14
+	tiles_amount_w = 15
 
 	# TODO: make this general for any tile_size in near future
 	# l_file_name = [
@@ -301,6 +344,8 @@ if __name__ == '__main__':
 	pix_arrow_right = np.array(Image.open(os.path.join(dir_img_path, 'arrow_right_16x32.png')))
 	
 	pix_select_piece = np.array(Image.open(os.path.join(dir_img_path, 'select_piece_16x16.png')))
+	
+	pix_side_bar_info_color_dice = np.array(Image.open(os.path.join(dir_img_path, 'side_bar_info_color_dice_80x48.png')))
 
 	d_tile_name_to_pix = {
 		'empty': pix_empty,
@@ -330,6 +375,7 @@ if __name__ == '__main__':
 		'arrow_left': np.flip(pix_arrow_right, axis=1),
 		'arrow_up': np.flip(pix_arrow_right, axis=1).transpose(1, 0, 2),
 		'select_piece': pix_select_piece,
+		'side_bar_info_color_dice': pix_side_bar_info_color_dice,
 	}
 
 	for y in range(0, pix_h, tile_size):
@@ -445,6 +491,7 @@ if __name__ == '__main__':
 		# ('nr_3', tile_size+9*tile_size, 0+9*tile_size),
 		# ('nr_4', tile_size+9*tile_size, tile_size+9*tile_size),
 		
+		('side_bar_info_color_dice', 2*tile_size, 11*tile_size),
 		('dice_nr_0', 5*tile_size, 12*tile_size),
 	]
 
@@ -497,7 +544,7 @@ if __name__ == '__main__':
 	# shift the list by one element right
 	l_pos_abs = l_pos_abs[-1:] + l_pos_abs[:-1]
 
-	l_player_nr = [1, 2, 3, 4]
+	l_piece_nr = [1, 2, 3, 4]
 	l_player_color = ['red', 'green', 'yellow', 'blue']
 	d_player_color_to_l_final_pos_inc = {
 		'red': [(0, 1) for _ in range(0, 4)],
@@ -623,23 +670,25 @@ if __name__ == '__main__':
 					field_cell_1.d_player_color_to_d_next_field[player_color] = {}
 
 				field_cell_1.d_player_color_to_d_next_field[player_color][amount_move] = field_cell_2				
-
 	
 
 	# create all the needed pieces
-	d_player_color_to_d_piece_nr_to_piece = {}
+	d_player_color_to_player = {}
+	# d_player_color_to_d_piece_nr_to_piece = {}
 	# d_player_color_to_l_piece_start = {}
 	# d_player_color_to_l_piece_moveable = {}
 	# d_player_color_to_l_piece_finish = {}
 	for player_color in l_player_color:
-		d_piece_nr_to_piece = {}
-		l_piece = []
-		for number in l_player_nr:
-			piece = Piece(
-				name=f'piece_{player_color}_nr_{number}',
-				color=player_color,
-				number=number,
-			)
+		player = Player(color=player_color, amount_piece=4)
+
+		# d_piece_nr_to_piece = {}
+		# l_piece = []
+		for number, piece in player.d_piece_nr_to_piece.items():
+			# piece = Piece(
+			# 	name=f'piece_{player_color}_nr_{number}',
+			# 	color=player_color,
+			# 	number=number,
+			# )
 			
 			pix_mask = d_tile_name_to_pix[f'empty_mask']
 			pix_select = d_tile_name_to_pix[f'select_piece']
@@ -655,10 +704,11 @@ if __name__ == '__main__':
 			pix_alpha_blending_many(pix_dst=pix_tmp, l_pix_src=[pix_piece, pix_number], l_y=[0, 0], l_x=[0, 0])
 			piece.d_tile_set["non_select"] = pix_tmp
 
-			d_piece_nr_to_piece[number] = piece
-			l_piece.append(piece)
+			# d_piece_nr_to_piece[number] = piece
+			# l_piece.append(piece)
 
-		d_player_color_to_d_piece_nr_to_piece[player_color] = d_piece_nr_to_piece
+		d_player_color_to_player[player_color] = player
+		# d_player_color_to_d_piece_nr_to_piece[player_color] = player.d_piece_nr_to_piece
 		# d_player_color_to_l_piece_start[player_color] = l_piece
 		# d_player_color_to_l_piece_moveable[player_color] = []
 		# d_player_color_to_l_piece_finish[player_color] = []
@@ -671,8 +721,10 @@ if __name__ == '__main__':
 		'blue': (9, 0),
 	}
 
-	d_player_color_to_d_starting_field_cell = {}
+	# d_player_color_to_d_starting_field_cell = {}
 	for player_color in l_player_color:
+		player = d_player_color_to_player[player_color]
+
 		pix_empty = d_tile_name_to_pix[f'empty']
 		pix_empty_frame = d_tile_name_to_pix[f'empty_frame']
 
@@ -683,46 +735,50 @@ if __name__ == '__main__':
 		starting_piece_idx_pos = d_player_color_to_piece_home_field_cell_idx_pos[player_color]
 		idx_y, idx_x = starting_piece_idx_pos
 
-		d_starting_field_cell = {}
+		# d_starting_field_cell = {}
 
-		piece_number = 1
-		for y_inc in range(0, 2):
-			idx_y_abs = idx_y + y_inc
-			for x_inc in range(0, 2):
-				idx_x_abs = idx_x + x_inc
+		l_pos_abs = [(idx_y+y_inc, idx_x+x_inc) for y_inc in range(0, 2) for x_inc in range(0, 2)]
+		# piece_number = 1
+		# for y_inc in range(0, 2):
+		# 	idx_y_abs = idx_y + y_inc
+		# 	for x_inc in range(0, 2):
+		# 		idx_x_abs = idx_x + x_inc
 
-				field_cell = FieldCell(
-					idx_y=idx_y_abs, idx_x=idx_x_abs,
-					pos_y=idx_y_abs*tile_size, pos_x=idx_x_abs*tile_size,
-					name_of_field=f"starting_{player_color_1}_nr_{piece_number}",
-					is_starting_cell=True, is_entrance_cell=False, is_finish_cell=False,
-				)
-				pix_tmp = pix_empty.copy()
-				pix_alpha_blending_many(pix_dst=pix_tmp, l_pix_src=[pix_empty_frame], l_y=[0], l_x=[0])
-				field_cell.d_tile_set["empty_cell"] = pix_tmp
+		for piece_number, (idx_y_abs, idx_x_abs) in enumerate(l_pos_abs, 1):
+			field_cell = FieldCell(
+				idx_y=idx_y_abs, idx_x=idx_x_abs,
+				pos_y=idx_y_abs*tile_size, pos_x=idx_x_abs*tile_size,
+				name_of_field=f"starting_{player_color_1}_nr_{piece_number}",
+				is_starting_cell=True, is_entrance_cell=False, is_finish_cell=False,
+			)
+			pix_tmp = pix_empty.copy()
+			pix_alpha_blending_many(pix_dst=pix_tmp, l_pix_src=[pix_empty_frame], l_y=[0], l_x=[0])
+			field_cell.d_tile_set["empty_cell"] = pix_tmp
 
-				field_cell.d_player_color_to_field_cell_nr[player_color] = 0
-				field_cell.d_player_color_to_d_next_field[player_color] = {6: starting_field_cell} # TODO: the 6 should be made generic with a const variable!
+			field_cell.d_player_color_to_field_cell_nr[player_color] = 0
+			field_cell.d_player_color_to_d_next_field[player_color] = {6: starting_field_cell} # TODO: the 6 should be made generic with a const variable!
 
-				d_idx_pos_to_field_cell[(idx_y_abs, idx_x_abs)] = field_cell
+			d_idx_pos_to_field_cell[(idx_y_abs, idx_x_abs)] = field_cell
 
-				piece = d_player_color_to_d_piece_nr_to_piece[player_color][piece_number]
-				
-				piece.current_field_cell = field_cell
-				piece.home_field_cell = field_cell
-				field_cell.current_piece = piece
+			piece = player.d_piece_nr_to_piece[piece_number]
+			
+			piece.current_field_cell = field_cell
+			piece.home_field_cell = field_cell
+			field_cell.current_piece = piece
 
-				d_starting_field_cell[(idx_y_abs, idx_x_abs)] = field_cell
+			# d_starting_field_cell[(idx_y_abs, idx_x_abs)] = field_cell
 
-				piece_number += 1
+			# piece_number += 1
 
-		d_player_color_to_d_starting_field_cell[player_color] = d_starting_field_cell
+		# d_player_color_to_d_starting_field_cell[player_color] = d_starting_field_cell
 
 
 	# now try drawing the pieces correctly
 
-	for d_piece_nr_to_piece in d_player_color_to_d_piece_nr_to_piece.values():
-		for piece in d_piece_nr_to_piece.values():
+	for player in d_player_color_to_player.values():
+	# for d_piece_nr_to_piece in d_player_color_to_d_piece_nr_to_piece.values():
+		# d_player_color_to_player
+		for piece in player.d_piece_nr_to_piece.values():
 			current_field_cell = piece.current_field_cell
 
 			y = current_field_cell.pos_y
@@ -741,30 +797,124 @@ if __name__ == '__main__':
 
 	# create the rotation sequence of the player color
 	d_player_color_to_player_color_next = {pl_col_1: pl_col_2 for pl_col_1, pl_col_2 in zip(l_player_color, l_player_color[1:]+l_player_color[:1])}
-	l_dice_sequence = [
-		1, 5, 6, 2,
-		6, 6, 2, 6,
-	]
+	d_player_color_to_player_color_next_rev = {pl_col_2: pl_col_1 for pl_col_1, pl_col_2 in d_player_color_to_player_color_next.items()}
+
+	# l_dice_sequence = [
+	# 	1, 2, 3, 6,
+	# 	2, 3, 4, 6,
+	# 	3, 4, 6, 4,
+	# 	6, 5, 1, 6,
+	# 	1, 6, 3, 6,
+	# 	1, 2, 3, 5,
+	# 	1, 2, 3, 2,
+	# 	6, 2, 3, 6,
+	# ]*50
+
+	# l_dice_sequence = [
+	# 	6, 1, 1, 1
+	# ]+ [
+	# 	1, 1, 1, 1,
+	# ]*44
+
+	# example for the random l_dice_sequence: np.tile(np.arange(1, 7), 2)[np.random.permutation(np.arange(0, 12))]
+	d_player_color_to_d_l_dice_sequence_idx = {
+		'red': {'l_dice_sequence': [6, 4, 5, 1, 2, 1, 3, 6, 2, 3, 5, 4], 'idx': 0},
+		'green': {'l_dice_sequence': [4, 4, 2, 1, 6, 5, 2, 5, 1, 3, 3, 6], 'idx': 0},
+		'yellow': {'l_dice_sequence': [6, 4, 1, 5, 4, 2, 5, 3, 1, 6, 3, 2], 'idx': 0},
+		'blue': {'l_dice_sequence': [5, 4, 6, 6, 5, 1, 2, 3, 3, 4, 1, 2], 'idx': 0},
+	}
+
+	for player_color, d_l_dice_sequence_idx in d_player_color_to_d_l_dice_sequence_idx.items():
+		player = d_player_color_to_player[player_color]
+
+		player.l_dice_sequence = list(d_l_dice_sequence_idx['l_dice_sequence'])
+		player.idx_dice = d_l_dice_sequence_idx['idx']
+
 
 	current_player_color = l_player_color[0]
-	for dice_number in l_dice_sequence:
+	# for dice_number in l_dice_sequence:
+	# for step_turn in range(0, 70):
+	for step_turn in range(0, 7000):
+		print(f"step_turn: {step_turn}")
+		d_l_dice_sequence_idx = d_player_color_to_d_l_dice_sequence_idx[current_player_color]
+
+		player = d_player_color_to_player[current_player_color]
+
+		# l_dice_sequence = d_l_dice_sequence_idx['l_dice_sequence']
+		# dice_number = l_dice_sequence[d_l_dice_sequence_idx['idx']]
+		# d_l_dice_sequence_idx['idx'] = (d_l_dice_sequence_idx['idx'] + 1) % len(l_dice_sequence)
+
+		dice_number = player.get_next_dice_number()
+
+	# while True:
 		# do the action first
 		# l_piece_start = d_player_color_to_l_piece_start[current_player_color]
 		# l_piece_moveable = d_player_color_to_l_piece_moveable[current_player_color]
 		# l_piece_finish = d_player_color_to_l_piece_finish[current_player_color]
 
-		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=4*tile_size, x=12*tile_size)
-		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'piece_{current_player_color}'], y=4*tile_size, x=12*tile_size)
+		d_piece_nr_to_piece = player.d_piece_nr_to_piece
+
+		for piece in d_piece_nr_to_piece.values():
+			if piece.state_start:
+				continue
+
+			# check if all other next possible moves are not possible. if not then this piece is in the finish_final state
+			d_player_color_to_d_next_field = piece.current_field_cell.d_player_color_to_d_next_field
+
+			if len(d_player_color_to_d_next_field) == 0:
+				piece.state_finish = False
+				piece.state_finish_final = True
+				continue
+
+			d_next_field = d_player_color_to_d_next_field[piece.color]
+
+			is_move_possible = False
+			for next_field_cell in d_next_field.values():
+				if (next_field_cell.current_piece is None) or (next_field_cell.current_piece.color != piece.color):
+					is_move_possible = True
+					break
+
+			if not is_move_possible:
+				piece.state_finish = False
+				piece.state_finish_final = True
+
+		count_state_finish_final = 0
+		for piece in d_piece_nr_to_piece.values():
+			count_state_finish_final += piece.state_finish_final
+
+		if count_state_finish_final == 4:
+			# remove the current_player_color from the queue!
+			game_field.l_player_color_finish.append(current_player_color)
+
+			if len(d_player_color_to_player_color_next) <= 1:
+				break
+
+			prev_player_color = d_player_color_to_player_color_next_rev[current_player_color]
+			next_player_color = d_player_color_to_player_color_next[current_player_color]
+
+			del d_player_color_to_player_color_next[current_player_color]
+			del d_player_color_to_player_color_next_rev[current_player_color]
+
+			d_player_color_to_player_color_next[prev_player_color] = next_player_color
+			d_player_color_to_player_color_next_rev[next_player_color] = prev_player_color
+
+			current_player_color = next_player_color
+			continue
+
+		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=3*tile_size, x=12*tile_size)
+		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'piece_{current_player_color}'], y=3*tile_size, x=12*tile_size)
 		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'dice_nr_{dice_number}'], y=5*tile_size, x=12*tile_size)
 		game_field.save_next_field_image()
 
-		d_piece_nr_to_piece = d_player_color_to_d_piece_nr_to_piece[current_player_color]
-
 		d_piece_nr_to_piece_start = {}
 		d_piece_nr_to_piece_moveable = {}
+		d_piece_nr_to_piece_finish = {}
 		d_piece_nr_to_piece_finish_final = {}
 
 		for piece_nr, piece in sorted(d_piece_nr_to_piece.items()):
+			if piece.state_finish:
+				d_piece_nr_to_piece_finish[piece_nr] = piece
+
 			if piece.state_start:
 				d_piece_nr_to_piece_start[piece_nr] = piece
 			elif not piece.state_start and not piece.state_finish_final:
@@ -773,6 +923,30 @@ if __name__ == '__main__':
 				d_piece_nr_to_piece_finish_final[piece_nr] = piece
 			else:
 				assert False and "Should never happen!"
+
+		# for piece_nr, piece in d_piece_nr_to_piece_finish.items():
+		# 	# check if all other next possible moves are not possible. if not then this piece is in the finish_final state
+		# 	d_player_color_to_d_next_field = piece.d_player_color_to_d_next_field
+
+		# 	if len(d_player_color_to_d_next_field) == 0:
+		# 		piece.state_finish = False
+		# 		piece.state_finish_final = True
+		# 		continue
+
+		# 	d_next_field = d_player_color_to_d_next_field[piece.color]
+
+		# 	is_move_possible = False
+		# 	for next_field_cell in d_next_field.values():
+		# 		if next_field_cell.current_piece is None:
+		# 			is_move_possible = True
+		# 			break
+
+		# 	if not is_move_possible:
+		# 		piece.state_finish = False
+		# 		piece.state_finish_final = True
+
+		# if len(d_piece_nr_to_piece_finish_final) == 4:
+		# 	pass
 
 		if dice_number == 6 and len(d_piece_nr_to_piece_start) > 0:
 			is_move_possible = False
@@ -783,9 +957,40 @@ if __name__ == '__main__':
 
 			if is_move_possible:
 				# do the move + animation
-				game_field.move_piece_from_starting_field_cell(piece=piece, amount_move=dice_number)
+				pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=3*tile_size, x=12*tile_size)
+				pix_alpha_blending(pix_dst=game_field.pix, pix_src=piece.d_tile_set['non_select'], y=3*tile_size, x=12*tile_size)
+				game_field.move_piece_to_next_field_cell(piece=piece, amount_move=dice_number)
 
-				pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=4*tile_size, x=12*tile_size)
+				pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=3*tile_size, x=12*tile_size)
+				pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'dice_nr_0'], y=5*tile_size, x=12*tile_size)
+				game_field.save_next_field_image()
+
+				current_player_color = d_player_color_to_player_color_next[current_player_color]
+				continue
+
+		if len(d_piece_nr_to_piece_moveable) > 0:
+			# find the least furthest one and check, if it can be moved or not!
+			d_piece_nr_to_field_cell_nr = {
+				piece.current_field_cell.d_player_color_to_field_cell_nr[current_player_color]: piece_nr
+				for piece_nr, piece in d_piece_nr_to_piece_moveable.items()
+			}
+			
+			l_field_cell_nr_piece_nr_sort = sorted(d_piece_nr_to_field_cell_nr.items())
+
+			is_move_possible = False
+			for _, piece_nr in l_field_cell_nr_piece_nr_sort:
+				piece = d_piece_nr_to_piece_moveable[piece_nr]
+				if piece.check_if_next_move_is_possible(amount_move=dice_number):
+					is_move_possible = True
+					break
+
+			if is_move_possible:
+				# do the move + animation
+				pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=3*tile_size, x=12*tile_size)
+				pix_alpha_blending(pix_dst=game_field.pix, pix_src=piece.d_tile_set['non_select'], y=3*tile_size, x=12*tile_size)
+				game_field.move_piece_to_next_field_cell(piece=piece, amount_move=dice_number)
+
+				pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=3*tile_size, x=12*tile_size)
 				pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'dice_nr_0'], y=5*tile_size, x=12*tile_size)
 				game_field.save_next_field_image()
 
@@ -808,7 +1013,7 @@ if __name__ == '__main__':
 		# 	# need at least one moveable piece out!
 		# 	piece = l_piece_start.pop(0)
 
-		# 	if not game_field.move_piece_from_starting_field_cell(piece=piece):
+		# 	if not game_field.move_piece_to_next_field_cell(piece=piece):
 		# 		l_piece_start.insert(0, piece)
 		# 		# current_player_color = d_player_color_to_player_color_next[current_player_color]
 				
@@ -827,7 +1032,7 @@ if __name__ == '__main__':
 		# else:
 		# 	pass
 
-		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=4*tile_size, x=12*tile_size)
+		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'empty'], y=3*tile_size, x=12*tile_size)
 		pix_alpha_blending(pix_dst=game_field.pix, pix_src=d_tile_name_to_pix[f'dice_nr_0'], y=5*tile_size, x=12*tile_size)
 		game_field.save_next_field_image()
 
