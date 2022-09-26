@@ -274,10 +274,6 @@ class GameField:
 						break
 					continue
 
-			# TODO: add the rolled dice with the current player playing e.g. on the right side as a side info
-			# TODO: make a function for the moving of a piece in the GameField class!
-			# TODO: add data to each field_cell and piece, where each piece and dice_number and move is tracked! do this correct from the beginning
-
 			pix_alpha_blending(pix_dst=self.pix, pix_src=d_tile_name_to_pix[f'empty'], y=SIDE_PIECE_IDX_Y*TILE_SIZE, x=SIDE_PIECE_IDX_X*TILE_SIZE)
 			pix_alpha_blending(pix_dst=self.pix, pix_src=d_tile_name_to_pix[f'dice_nr_0'], y=SIDE_DICE_IDX_Y*TILE_SIZE, x=SIDE_DICE_IDX_X*TILE_SIZE)
 			self.save_next_field_image()
@@ -491,17 +487,32 @@ if __name__ == '__main__':
 	dir_img_path = os.path.join(CURRENT_WORKING_DIR, 'img')
 	assert os.path.exists(dir_img_path)
 
-	AMOUNT_PLAYER = 4
+	# TODO: make able to choose in which order the players are also playing + which colors!
+	AMOUNT_PLAYER = 3
 	
 	assert AMOUNT_PLAYER >= 1
 	assert AMOUNT_PLAYER <= 4
 
-	AMOUNT_PIECE_PER_PLAYER = 2
-	AMOUNT_PIECE_FINISH_SIZE = 2
-	AMOUNT_PIECE_FIELD_SIZE = 2
+	AMOUNT_PIECE_PER_PLAYER = 3
+	AMOUNT_PIECE_FINISH_SIZE = 3
+	AMOUNT_PIECE_FIELD_SIZE = 4
 
 	assert AMOUNT_PIECE_PER_PLAYER <= AMOUNT_PIECE_FINISH_SIZE
 	assert AMOUNT_PIECE_FINISH_SIZE <= AMOUNT_PIECE_FIELD_SIZE
+
+	start_piece_w = 0
+	start_piece_h = 0
+	for _ in range(0, 100):
+		start_piece_w += 1
+		if start_piece_w * start_piece_h >= AMOUNT_PIECE_PER_PLAYER:
+			break
+
+		start_piece_h += 1
+		if start_piece_w * start_piece_h >= AMOUNT_PIECE_PER_PLAYER:
+			break
+
+	START_PIECE_W = start_piece_w
+	START_PIECE_H = start_piece_h
 
 	DICE_SIDES = 6
 
@@ -531,6 +542,12 @@ if __name__ == '__main__':
 	ARROW_LEFT_IDX_X = AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x
 	ARROW_UP_IDX_Y = AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y
 	ARROW_UP_IDX_X = AMOUNT_PIECE_FIELD_SIZE - 1 + field_offset_idx_x
+
+	if AMOUNT_PIECE_FIELD_SIZE == 1:
+		ARROW_RIGHT_IDX_X -= 1
+		ARROW_DOWN_IDX_Y -= 1
+		ARROW_LEFT_IDX_X += 1
+		ARROW_UP_IDX_Y += 1
 
 	# TODO: make this general for any TILE_SIZE in near future
 	# l_file_name = [
@@ -568,6 +585,8 @@ if __name__ == '__main__':
 	pix_number_2 = np.array(Image.open(os.path.join(dir_img_path, 'number_2_16x16.png')))
 	pix_number_3 = np.array(Image.open(os.path.join(dir_img_path, 'number_3_16x16.png')))
 	pix_number_4 = np.array(Image.open(os.path.join(dir_img_path, 'number_4_16x16.png')))
+	pix_number_5 = np.array(Image.open(os.path.join(dir_img_path, 'number_5_16x16.png')))
+	pix_number_6 = np.array(Image.open(os.path.join(dir_img_path, 'number_6_16x16.png')))
 	
 	pix_dice_number_0 = np.array(Image.open(os.path.join(dir_img_path, 'dice_nr_0_16x16.png')))
 	pix_dice_number_1 = np.array(Image.open(os.path.join(dir_img_path, 'dice_nr_1_16x16.png')))
@@ -600,6 +619,8 @@ if __name__ == '__main__':
 		'nr_2': pix_number_2,
 		'nr_3': pix_number_3,
 		'nr_4': pix_number_4,
+		'nr_5': pix_number_5,
+		'nr_6': pix_number_6,
 		'dice_nr_0': pix_dice_number_0,
 		'dice_nr_1': pix_dice_number_1,
 		'dice_nr_2': pix_dice_number_2,
@@ -717,7 +738,7 @@ if __name__ == '__main__':
 		
 
 		# TODO: need to refactor this in the future
-		for i in range(1, 9):
+		for i in range(1, MOVE_FIELD_CELL-1):
 			y, x = l_player_pos_abs[i] # the way of the player_color_1
 			field_cell = FieldCell(
 				idx_y=y, idx_x=x,
@@ -732,7 +753,7 @@ if __name__ == '__main__':
 			d_idx_pos_to_field_cell[(y, x)] = field_cell
 		
 
-		y, x = l_player_pos_abs[9] # the exit field_cell of player_color_2
+		y, x = l_player_pos_abs[MOVE_FIELD_CELL-1] # the exit field_cell of player_color_2
 		field_cell = FieldCell(
 			idx_y=y, idx_x=x,
 			pos_y=y*TILE_SIZE, pos_x=x*TILE_SIZE,
@@ -802,12 +823,20 @@ if __name__ == '__main__':
 
 	# create the starting fields and associate the starting game_field with each piece too
 	# TODO: make here the refactoring for the correct position of the starting fields
-	d_player_color_to_piece_home_field_cell_idx_pos = {
-		'red': (0 + field_offset_idx_y - 1, 0 + field_offset_idx_x - 1),
-		'green': (0 + field_offset_idx_y - 1, AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x + 1),
-		'yellow': (AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y + 1, AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x + 1),
-		'blue': (AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y + 1, 0 + field_offset_idx_x - 1),
-	}
+	if AMOUNT_PIECE_PER_PLAYER == 1 and AMOUNT_PIECE_FIELD_SIZE == 1:
+		d_player_color_to_piece_home_field_cell_idx_pos = {
+			'red': (0 + field_offset_idx_y - 1, 0 + field_offset_idx_x - 1),
+			'green': (0 + field_offset_idx_y - 1, AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x + 2),
+			'yellow': (AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y + 2, AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x + 2),
+			'blue': (AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y + 2, 0 + field_offset_idx_x - 1),
+		}
+	else:
+		d_player_color_to_piece_home_field_cell_idx_pos = {
+			'red': (0 + field_offset_idx_y, 0 + field_offset_idx_x),
+			'green': (0 + field_offset_idx_y, AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x - START_PIECE_W + 2),
+			'yellow': (AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y - START_PIECE_H + 2, AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x - START_PIECE_W + 2),
+			'blue': (AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y  - START_PIECE_H + 2, 0 + field_offset_idx_x),
+		}
 
 	# d_player_color_to_d_starting_field_cell = {}
 	for player_color in l_player_color:
@@ -824,7 +853,7 @@ if __name__ == '__main__':
 		idx_y, idx_x = starting_piece_idx_pos
 
 		# TODO: refactor this part more dynamically
-		l_pos_abs = [(idx_y+y_inc, idx_x+x_inc) for y_inc in range(0, 2) for x_inc in range(0, 2)]
+		l_pos_abs = [(idx_y+y_inc, idx_x+x_inc) for y_inc in range(0, START_PIECE_H) for x_inc in range(0, START_PIECE_W)]
 		for piece_number, (idx_y_abs, idx_x_abs) in enumerate(l_pos_abs, 1):
 			if piece_number not in player.d_piece_nr_to_piece:
 				continue
@@ -890,6 +919,7 @@ if __name__ == '__main__':
 				pix_alpha_blending(pix_dst=game_field.pix, pix_src=piece.d_tile_set["non_select"], y=y, x=x)
 
 	game_field.save_next_field_image()
+	# Image.fromarray(game_field.pix).show()
 
 	# lets try out a fixed dice roll sequence and see the result at the end!
 	# example for the random l_dice_sequence: np.tile(np.arange(1, 7), 2)[np.random.permutation(np.arange(0, 12))]
@@ -913,13 +943,8 @@ if __name__ == '__main__':
 	game_field.play_the_game(max_step_turn=max_step_turn)
 
 	# FIXME: change the priorities for each TODO if needed
-	# TODO: for the ring fields (main field_cells only, not the home or the finish field_cells) for placing the piece back home, when 0 amount_move should be done!
-	# TODO: make each move interactable with the updating of the playing game_field + log
 	# TODO: make more functional style and oop style (do refactoring)
 	# TODO: write function for the first interactions
-	# TODO: make the most simplest rule for playing the game automatically
-	# TODO: make possible for playing 1, 2, 3 and 4 players
-	# TODO: write a log file for each game player until no more moves can be made!
 	# TODO: write test cases later for testing the play game_field!
 
 	# TODO: create the images for each tile programable with code, not hardcoded as image! (if possible)
