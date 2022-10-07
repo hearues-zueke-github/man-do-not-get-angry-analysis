@@ -68,15 +68,24 @@ def pix_alpha_blending_many(pix_dst, l_pix_src, l_y, l_x):
 		pix_alpha_blending(pix_dst=pix_dst, pix_src=pix_src, y=y, x=x)
 
 
+def get_current_dt_str():
+	return datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d_%H:%M:%S:%f')
+
+
 # TODO: refactor game_field more cleaner
 class GameField:
-	def __init__(self, h, w, l_player_color, should_save_image=True, should_save_df=True):
+	def __init__(self, game_nr, h, w, l_player_color, should_save_image=True, should_save_df=True, l_seed_prefix=[]):
+		self.game_nr = game_nr
 		self.h = h
 		self.w = w
-		self.pix = np.zeros((h, w, 4), dtype=np.uint8)
-		self.play_field_number = 0
+		self.l_player_color = l_player_color
 		self.should_save_image = should_save_image
 		self.should_save_df = should_save_df
+		self.l_seed_prefix = l_seed_prefix
+		
+		self.d_player_color_to_pos_idx = {player_color: pos_idx for pos_idx, player_color in enumerate(self.l_player_color, 0)}
+		self.pix = np.zeros((h, w, 4), dtype=np.uint8)
+		self.play_field_number = 0
 
 		if should_save_image or should_save_df:
 			self.temp_dir_path = os.path.join(os.path.join(TEMP_DIR, 'man_do_not_get_angry'), datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d_%H:%M:%S:%f'))
@@ -86,13 +95,18 @@ class GameField:
 			self.temp_dir_path = None
 
 		self.l_player_color_finish = []
+		self.l_pos_idx_finish = []
 		self.l_piece_finish_final = []
 		self.d_player_color_to_player = {}
+
+		self.d_idx_pos_to_field_cell = {}
 
 		self.d_player_color_to_player_color_next = {pl_col_1: pl_col_2 for pl_col_1, pl_col_2 in zip(l_player_color, l_player_color[1:]+l_player_color[:1])}
 		self.d_player_color_to_player_color_next_rev = {pl_col_2: pl_col_1 for pl_col_1, pl_col_2 in self.d_player_color_to_player_color_next.items()}
 
 		self.current_player_color = l_player_color[0]
+
+		self.l_player_dt_str_seed = None
 
 
 	def init_new_game(self):
@@ -139,7 +153,7 @@ class GameField:
 		# create all possible game_field for each piece individually
 		MOVE_FIELD_CELL = AMOUNT_PIECE_FIELD_SIZE*2 + 2
 		d_player_color_to_l_player_idx_pos_abs = {}
-		for player_color in l_player_color_all:
+		for player_color in L_PLAYER_COLOR_ALL:
 			l_final_idx_pos_inc = d_player_color_to_l_final_idx_pos_inc[player_color]
 
 			y_abs, x_abs = l_pos_abs[-1] # get the last pos to calc the last final fields too
@@ -159,7 +173,7 @@ class GameField:
 		# e.g. from the position 2 the piece can go next to 3, 4, 5, 6, 7 and 8 because of all the possibilities
 
 		d_player_color_to_d_lookup_table = {}
-		for player_color in l_player_color_all:
+		for player_color in L_PLAYER_COLOR_ALL:
 			l_player_idx_pos_abs = d_player_color_to_l_player_idx_pos_abs[player_color]
 
 			d_lookup_table = {}
@@ -170,9 +184,8 @@ class GameField:
 
 		field_cell_idx = 0
 
-		d_idx_pos_to_field_cell = {}
 		# now set for all individual field_cell the next possible field_cells
-		for player_color_1, player_color_2 in zip(l_player_color_all, l_player_color_all[1:]+l_player_color_all[:1]):
+		for player_color_1, player_color_2 in zip(L_PLAYER_COLOR_ALL, L_PLAYER_COLOR_ALL[1:]+L_PLAYER_COLOR_ALL[:1]):
 			pix_empty = d_tile_name_to_pix[f'empty']
 
 			pix_empty_mask = d_tile_name_to_pix[f'empty_mask']
@@ -195,7 +208,7 @@ class GameField:
 			pix_alpha_blending_many(pix_dst=pix_tmp, l_pix_src=[pix_empty, pix_empty_frame_color], l_y=[0, 0], l_x=[0, 0])
 			field_cell.d_tile_set["empty_cell"] = pix_tmp
 
-			d_idx_pos_to_field_cell[(y, x)] = field_cell
+			self.d_idx_pos_to_field_cell[(y, x)] = field_cell
 			
 
 			# TODO: need to refactor this in the future
@@ -214,7 +227,7 @@ class GameField:
 				pix_alpha_blending_many(pix_dst=pix_tmp, l_pix_src=[pix_empty, pix_empty_frame], l_y=[0, 0], l_x=[0, 0])
 				field_cell.d_tile_set["empty_cell"] = pix_tmp
 
-				d_idx_pos_to_field_cell[(y, x)] = field_cell
+				self.d_idx_pos_to_field_cell[(y, x)] = field_cell
 			
 
 			y, x = l_player_idx_pos_abs[MOVE_FIELD_CELL-1] # the exit field_cell of player_color_2
@@ -231,7 +244,7 @@ class GameField:
 			pix_alpha_blending_many(pix_dst=pix_tmp, l_pix_src=[pix_empty, pix_empty_frame], l_y=[0, 0], l_x=[0, 0])
 			field_cell.d_tile_set["empty_cell"] = pix_tmp
 
-			d_idx_pos_to_field_cell[(y, x)] = field_cell
+			self.d_idx_pos_to_field_cell[(y, x)] = field_cell
 
 
 			for i, (y, x) in enumerate(l_player_idx_pos_abs[-AMOUNT_PIECE_FINISH_SIZE:], 1): # the last fields of the player_color_1
@@ -248,22 +261,22 @@ class GameField:
 				pix_alpha_blending_many(pix_dst=pix_tmp, l_pix_src=[pix_empty, pix_empty_frame_color], l_y=[0, 0], l_x=[0, 0])
 				field_cell.d_tile_set["empty_cell"] = pix_tmp
 
-				d_idx_pos_to_field_cell[(y, x)] = field_cell
+				self.d_idx_pos_to_field_cell[(y, x)] = field_cell
 
 
-		for player_color in l_player_color_all:
+		for player_color in L_PLAYER_COLOR_ALL:
 			l_player_idx_pos_abs = d_player_color_to_l_player_idx_pos_abs[player_color]
 			
 			for field_cell_nr, pos_abs in enumerate(l_player_idx_pos_abs, 1):
-				field_cell = d_idx_pos_to_field_cell[pos_abs]
+				field_cell = self.d_idx_pos_to_field_cell[pos_abs]
 				field_cell.d_player_color_to_field_cell_nr[player_color] = field_cell_nr
 
 			d_lookup_table = d_player_color_to_d_lookup_table[player_color]
 
 			for amount_move, d_idx_pos_1_to_idx_pos_2 in d_lookup_table.items():
 				for idx_pos_1, idx_pos_2 in d_idx_pos_1_to_idx_pos_2.items():
-					field_cell_1 = d_idx_pos_to_field_cell[idx_pos_1]
-					field_cell_2 = d_idx_pos_to_field_cell[idx_pos_2]
+					field_cell_1 = self.d_idx_pos_to_field_cell[idx_pos_1]
+					field_cell_2 = self.d_idx_pos_to_field_cell[idx_pos_2]
 
 					if player_color not in field_cell_1.d_player_color_to_d_next_field:
 						field_cell_1.d_player_color_to_d_next_field[player_color] = {}
@@ -271,7 +284,7 @@ class GameField:
 					field_cell_1.d_player_color_to_d_next_field[player_color][amount_move] = field_cell_2
 
 		# create all the players with there pieces
-		for player_color in l_player_color:
+		for player_color in self.l_player_color:
 			player = Player(
 				name=f'player_{player_color}',
 				color=player_color,
@@ -320,7 +333,7 @@ class GameField:
 			}
 
 		# d_player_color_to_d_starting_field_cell = {}
-		for player_color in l_player_color:
+		for player_color in self.l_player_color:
 			player = self.d_player_color_to_player[player_color]
 
 			pix_empty = d_tile_name_to_pix[f'empty']
@@ -328,7 +341,7 @@ class GameField:
 
 			l_player_idx_pos_abs = d_player_color_to_l_player_idx_pos_abs[player_color]
 			starting_player_pos_abs = l_player_idx_pos_abs[0]
-			starting_field_cell = d_idx_pos_to_field_cell[starting_player_pos_abs]
+			starting_field_cell = self.d_idx_pos_to_field_cell[starting_player_pos_abs]
 
 			starting_piece_idx_pos = d_player_color_to_piece_home_field_cell_idx_pos[player_color]
 			idx_y, idx_x = starting_piece_idx_pos
@@ -357,7 +370,7 @@ class GameField:
 				field_cell.d_player_color_to_field_cell_nr[player_color] = 0
 				field_cell.d_player_color_to_d_next_field[player_color] = {DICE_SIDES: starting_field_cell} # TODO: the 6 should be made generic with a const variable!
 
-				d_idx_pos_to_field_cell[(idx_y_abs, idx_x_abs)] = field_cell
+				self.d_idx_pos_to_field_cell[(idx_y_abs, idx_x_abs)] = field_cell
 				
 				piece.current_field_cell = field_cell
 				piece.home_field_cell = field_cell
@@ -384,7 +397,7 @@ class GameField:
 			pix_alpha_blending(pix_dst=self.pix, pix_src=d_tile_name_to_pix[tile_name], y=y, x=x)
 
 		# draw all the field_cells
-		for field_cell in d_idx_pos_to_field_cell.values():
+		for field_cell in self.d_idx_pos_to_field_cell.values():
 			pix_alpha_blending(pix_dst=self.pix, pix_src=field_cell.d_tile_set["empty_cell"], y=field_cell.pos_y, x=field_cell.pos_x)
 
 		self.save_next_field_image()
@@ -417,9 +430,15 @@ class GameField:
 		# for player_color in l_player_color:
 		# 	player = self.d_player_color_to_player[player_color]
 
+		l_player_dt_str_seed = []
+		self.l_player_dt_str_seed = l_player_dt_str_seed
+
 		for player in self.d_player_color_to_player.values():
-			dt_str = datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d_%H:%M:%S:%f')
-			seed = list(dt_str.encode('utf-8'))
+			dt_str = get_current_dt_str()
+			seed = self.l_seed_prefix + list(dt_str.encode('utf-8'))
+			
+			l_player_dt_str_seed.append((player, dt_str, seed))
+
 			player.rnd = Generator(PCG64(seed))
 
 
@@ -430,9 +449,43 @@ class GameField:
 			self.play_field_number += 1
 
 
-	def save_df_data(self):
-		if not self.should_save_df:
-			return
+	def get_df_data(self):
+		d_name_to_df = {}
+
+		l_column = [
+			'game_nr', 'player_color', 'player_color_idx', 'pos_idx', 'place',
+			'amount_dice_roll', 'amount_move',
+		]
+		d_data = {column: [] for column in l_column}
+		d_player_color_to_place = {player_color: place for place, player_color in enumerate(self.l_player_color_finish, 1)}
+
+		for player_color, player in self.d_player_color_to_player.items():
+			d_data['game_nr'].append(self.game_nr)
+			
+			player_color_idx = D_PLAYER_COLOR_TO_PLAYER_COLOR_IDX[player_color]
+
+			d_data['player_color'].append(player_color)
+			d_data['player_color_idx'].append(player_color_idx)
+
+			pos_idx = self.d_player_color_to_pos_idx[player_color]
+			d_data['pos_idx'].append(pos_idx)
+			
+			place = d_player_color_to_place[player_color]
+			d_data['place'].append(place)
+
+			sum_amount_move = sum([len(piece.l_amount_move) for piece in player.d_piece_nr_to_piece.values()])
+			amount_dice_roll = len(player.l_dice_number)
+
+			assert amount_dice_roll >= sum_amount_move
+
+			d_data['amount_dice_roll'].append(amount_dice_roll)
+			d_data['amount_move'].append(sum_amount_move)
+
+		df_player_stats = pd.DataFrame(data=d_data, columns=l_column, dtype=object)
+
+		df_player_stats_sort = df_player_stats.sort_values(by=['player_color_idx', 'pos_idx'])
+		d_name_to_df['df_player_stats'] = df_player_stats_sort
+
 
 		l_column = [
 			'player_color', 'player_color_idx',
@@ -444,7 +497,7 @@ class GameField:
 		d_data = {column: [] for column in l_column}
 
 		for player_color, player in self.d_player_color_to_player.items():
-			player_color_idx = d_player_color_to_player_color_idx[player_color]
+			player_color_idx = D_PLAYER_COLOR_TO_PLAYER_COLOR_IDX[player_color]
 
 			for piece_nr, piece in player.d_piece_nr_to_piece.items():
 				d_data['player_color'].append(player_color)
@@ -465,8 +518,8 @@ class GameField:
 				d_data['amount_beat_by_any'].append(amount_beat_by_any)
 				d_data['amount_beat_any'].append(amount_beat_any)
 
-				d_stat_beat_by = {color: 0 for color in l_player_color_all}
-				d_stat_beat = {color: 0 for color in l_player_color_all}
+				d_stat_beat_by = {color: 0 for color in L_PLAYER_COLOR_ALL}
+				d_stat_beat = {color: 0 for color in L_PLAYER_COLOR_ALL}
 
 				for other_piece in d_removed_by_piece.values():
 					d_stat_beat_by[other_piece.color] += 1
@@ -483,7 +536,7 @@ class GameField:
 		df_piece_stats = pd.DataFrame(data=d_data, columns=l_column, dtype=object)
 
 		df_piece_stats_sort = df_piece_stats.sort_values(by=['player_color_idx', 'piece_nr']).drop(labels=['piece'], axis=1)
-		df_piece_stats_sort.to_csv(os.path.join(self.temp_dir_path, 'df_piece_stats_sort.csv'), sep=';', index=False)
+		d_name_to_df['df_piece_stats'] = df_piece_stats_sort
 
 
 		d_action_type_to_action_type_idx = {
@@ -491,7 +544,6 @@ class GameField:
 			'player_color,piece_nr': 2,
 		}
 
-		# TODO: create 1 row where the piece is with the field_cell from/to, not 2 rows for each one separate
 		l_column = [
 			'step_turn',
 			'action_type', 'action_value', 'action_idx',
@@ -504,7 +556,7 @@ class GameField:
 		d_data = {column: [] for column in l_column}
 
 		for player_color, player in self.d_player_color_to_player.items():
-			player_color_idx = d_player_color_to_player_color_idx[player_color]
+			player_color_idx = D_PLAYER_COLOR_TO_PLAYER_COLOR_IDX[player_color]
 
 			for piece_nr, piece in player.d_piece_nr_to_piece.items():
 				d_amount_move = dict(piece.l_amount_move)
@@ -562,7 +614,18 @@ class GameField:
 		df_piece_action = pd.DataFrame(data=d_data, columns=l_column, dtype=object)
 
 		df_piece_action_sort = df_piece_action.sort_values(by=['step_turn', 'action_idx']).drop(labels=['piece', 'field_cell_from', 'field_cell_to'], axis=1)
-		df_piece_action_sort.to_csv(os.path.join(self.temp_dir_path, 'df_piece_action_sort.csv'), sep=';', index=False)
+		d_name_to_df['df_piece_action'] = df_piece_action_sort
+
+
+		return d_name_to_df
+
+
+	def save_df_data(self, d_name_to_df):
+		if not self.should_save_df:
+			return None
+
+		for name, df in d_name_to_df.items():
+			df.to_csv(os.path.join(self.temp_dir_path, f'{name}.csv'), sep=';', index=False)
 
 
 	def move_piece(self, piece: 'Piece', step_turn: int, amount_move: int):
@@ -649,6 +712,7 @@ class GameField:
 		if count_state_finish_final == AMOUNT_PIECE_PER_PLAYER:
 			# remove the self.current_player_color from the queue!
 			self.l_player_color_finish.append(self.current_player_color)
+			self.l_pos_idx_finish.append(self.d_player_color_to_pos_idx[self.current_player_color])
 
 			if len(self.d_player_color_to_player_color_next) <= 1:
 				return True
@@ -970,6 +1034,7 @@ class Player:
 		self.idx_dice = 0
 		self.amount_dice_used = 0
 		self.l_dice_number = []
+
 		self.rnd = rnd
 
 
@@ -1069,7 +1134,7 @@ if __name__ == '__main__':
 	assert os.path.exists(dir_img_path)
 
 	argv = sys.argv
-	assert len(argv) == 5
+	assert len(argv) == 6
 
 	# TODO: make able to choose in which order the players are also playing + which colors!
 	AMOUNT_PLAYER = int(argv[1])
@@ -1083,6 +1148,28 @@ if __name__ == '__main__':
 
 	assert AMOUNT_PIECE_PER_PLAYER <= AMOUNT_PIECE_FINISH_SIZE
 	assert AMOUNT_PIECE_FINISH_SIZE <= AMOUNT_PIECE_FIELD_SIZE
+	
+	L_PLAYER_COLOR_IDX = [int(v_str) for v_str in argv[5].split(',')]
+	assert len(L_PLAYER_COLOR_IDX) == AMOUNT_PLAYER
+
+	u, c = np.unique(L_PLAYER_COLOR_IDX, return_counts=True)
+	assert u.shape[0] == AMOUNT_PLAYER
+	assert np.all(c == 1)
+
+	L_PLAYER_COLOR_ALL = ['red', 'green', 'yellow', 'blue']
+	D_PLAYER_COLOR_TO_PLAYER_COLOR_IDX = {
+		'red': 1,
+		'green': 2,
+		'yellow': 3,
+		'blue': 4,
+	}
+	D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR = {
+		1: 'red',
+		2: 'green',
+		3: 'yellow',
+		4: 'blue',
+	}
+	L_PLAYER_COLOR = [D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR[player_color_idx] for player_color_idx in L_PLAYER_COLOR_IDX]
 
 	start_piece_w = 0
 	start_piece_h = 0
@@ -1141,34 +1228,32 @@ if __name__ == '__main__':
 	PIX_H = TILES_AMOUNT_H * TILE_SIZE
 	PIX_W = TILES_AMOUNT_W * TILE_SIZE
 
-	l_player_color_all = ['red', 'green', 'yellow', 'blue']
-	d_player_color_to_player_color_idx = {
-		'red': 1,
-		'green': 2,
-		'yellow': 3,
-		'blue': 4,
-	}
-	l_player_color = l_player_color_all[:AMOUNT_PLAYER] # TODO: make possible for choosing the order of the players too in the future
-
 	d_tile_name_to_pix = load_tiles()
 	
+	# l_game_field = []
+	l_d_name_to_df = []
 	l_step_turn = []
 	max_game_nr = 5000
 	for game_nr in range(1, max_game_nr+1):
 		print(f'game_nr: {game_nr:5}/{max_game_nr:5}')
 		game_field = GameField(
+			game_nr=game_nr,
 			h=PIX_H,
 			w=PIX_W,
-			l_player_color=l_player_color,
+			l_player_color=L_PLAYER_COLOR,
 			should_save_image=SHOULD_SAVE_IMAGE,
 			should_save_df=SHOULD_SAVE_DF,
+			l_seed_prefix=[],
 		)
 
 		game_field.init_new_game()
 		
 		game_field.play_the_game(max_step_turn=MAX_STEP_TURN)
-		game_field.save_df_data()
+		d_name_to_df = game_field.get_df_data()
+		game_field.save_df_data(d_name_to_df=d_name_to_df)
 
+		# l_game_field.append(game_field)
+		l_d_name_to_df.append(d_name_to_df)
 		l_step_turn.append(game_field.step_turn)
 
 	amount_step_turn = len(l_step_turn)
@@ -1181,10 +1266,64 @@ if __name__ == '__main__':
 	print(f"AMOUNT_PIECE_PER_PLAYER: {AMOUNT_PIECE_PER_PLAYER}")
 	print(f"AMOUNT_PIECE_FINISH_SIZE: {AMOUNT_PIECE_FINISH_SIZE}")
 	print(f"AMOUNT_PIECE_FIELD_SIZE: {AMOUNT_PIECE_FIELD_SIZE}")
+	print(f"L_PLAYER_COLOR: {L_PLAYER_COLOR}")
+	print(f"L_PLAYER_COLOR_IDX: {L_PLAYER_COLOR_IDX}")
 
 	print(f"amount_step_turn: {amount_step_turn}")
 	print(f"sum_prod_val: {sum_prod_val}")
 	print(f"estimation_step_turn: {estimation_step_turn}")
+
+	def get_1d_data_stats(arr):
+		if isinstance(arr, list):
+			arr = np.array(arr, dtype=object)
+		elif isinstance(arr, np.ndarray):
+			pass
+		else:
+			globals()['arr_loc'] = arr
+			assert False and "Need to be either a list or an array! (1d data)"
+
+		assert len(arr.shape) == 1
+
+		# TODO: add to remove NaN or None values too
+
+		d = {}
+
+		d['n'] = arr.shape[0]
+		d['mean'] = np.mean(arr)
+		d['std'] = np.std(arr)
+		d['min'] = np.min(arr)
+		d['median'] = np.median(arr)
+		d['max'] = np.max(arr)
+
+		return d
+
+	df_player = pd.concat([d['df_player_stats'] for d in l_d_name_to_df])
+	df_player_grpby = df_player.groupby(by=['player_color', 'player_color_idx']).apply(dict).reset_index().rename(mapper={0: 'dict'}, axis=1)
+
+	ser_amount_dice_roll = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['amount_dice_roll'].values))
+	ser_amount_move = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['amount_move'].values))
+	ser_place = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['place'].values))
+
+	df_stats_avrg = pd.concat([
+			df_player_grpby['player_color'],
+			df_player_grpby['player_color_idx'],
+
+			ser_amount_dice_roll.apply(lambda x: x['mean']).rename('amount_dice_roll_mean'),
+			ser_amount_dice_roll.apply(lambda x: x['std']).rename('amount_dice_roll_std'),
+			ser_amount_dice_roll.apply(lambda x: x['median']).rename('amount_dice_roll_median'),
+
+			ser_amount_move.apply(lambda x: x['mean']).rename('amount_move_mean'),
+			ser_amount_move.apply(lambda x: x['std']).rename('amount_move_std'),
+			ser_amount_move.apply(lambda x: x['median']).rename('amount_move_median'),
+
+			ser_place.apply(lambda x: x['mean']).rename('place_mean'),
+			ser_place.apply(lambda x: x['std']).rename('place_std'),
+			ser_place.apply(lambda x: x['median']).rename('place_median'),
+		],
+		axis=1,
+	).sort_values(by=['player_color_idx'])
+
+	print(f"df_stats_avrg:\n{df_stats_avrg}")
 
 	# FIXME: change the priorities for each TODO if needed
 	# TODO: make more functional style and oop style (do refactoring)
