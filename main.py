@@ -33,6 +33,8 @@ from PIL import Image
 
 from numpy.random import Generator, PCG64
 
+from utils_mutliprocessing import MultiprocessingManager
+
 CURRENT_WORKING_DIR = os.getcwd()
 PATH_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 HOME_DIR = os.path.expanduser("~")
@@ -435,7 +437,7 @@ class GameField:
 
 		for player in self.d_player_color_to_player.values():
 			dt_str = get_current_dt_str()
-			seed = self.l_seed_prefix + list(dt_str.encode('utf-8'))
+			seed = self.l_seed_prefix + list(dt_str.encode('utf-8')) + list(bytes(np.uint64([self.game_nr]).view(np.uint8)))
 			
 			l_player_dt_str_seed.append((player, dt_str, seed))
 
@@ -1134,202 +1136,270 @@ if __name__ == '__main__':
 	assert os.path.exists(dir_img_path)
 
 	argv = sys.argv
-	assert len(argv) == 6
+	assert len(argv) == 4
 
-	# TODO: make able to choose in which order the players are also playing + which colors!
-	AMOUNT_PLAYER = int(argv[1])
-	
-	assert AMOUNT_PLAYER >= 1
-	assert AMOUNT_PLAYER <= 4
-
-	AMOUNT_PIECE_PER_PLAYER = int(argv[2])
-	AMOUNT_PIECE_FINISH_SIZE = int(argv[3])
-	AMOUNT_PIECE_FIELD_SIZE = int(argv[4])
+	AMOUNT_PIECE_PER_PLAYER = int(argv[1])
+	AMOUNT_PIECE_FINISH_SIZE = int(argv[2])
+	AMOUNT_PIECE_FIELD_SIZE = int(argv[3])
 
 	assert AMOUNT_PIECE_PER_PLAYER <= AMOUNT_PIECE_FINISH_SIZE
 	assert AMOUNT_PIECE_FINISH_SIZE <= AMOUNT_PIECE_FIELD_SIZE
 	
-	L_PLAYER_COLOR_IDX = [int(v_str) for v_str in argv[5].split(',')]
-	assert len(L_PLAYER_COLOR_IDX) == AMOUNT_PLAYER
+	# L_PLAYER_COLOR_IDX = [int(v_str) for v_str in argv[5].split(',')]
+	# assert len(L_PLAYER_COLOR_IDX) == amount_player
 
-	u, c = np.unique(L_PLAYER_COLOR_IDX, return_counts=True)
-	assert u.shape[0] == AMOUNT_PLAYER
-	assert np.all(c == 1)
+	# u, c = np.unique(L_PLAYER_COLOR_IDX, return_counts=True)
+	# assert u.shape[0] == amount_player
+	# assert np.all(c == 1)
 
 	L_PLAYER_COLOR_ALL = ['red', 'green', 'yellow', 'blue']
-	D_PLAYER_COLOR_TO_PLAYER_COLOR_IDX = {
-		'red': 1,
-		'green': 2,
-		'yellow': 3,
-		'blue': 4,
-	}
-	D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR = {
-		1: 'red',
-		2: 'green',
-		3: 'yellow',
-		4: 'blue',
-	}
-	L_PLAYER_COLOR = [D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR[player_color_idx] for player_color_idx in L_PLAYER_COLOR_IDX]
-
-	start_piece_w = 0
-	start_piece_h = 0
-	for _ in range(0, 100):
-		start_piece_w += 1
-		if start_piece_w * start_piece_h >= AMOUNT_PIECE_PER_PLAYER:
-			break
-
-		start_piece_h += 1
-		if start_piece_w * start_piece_h >= AMOUNT_PIECE_PER_PLAYER:
-			break
-
-	START_PIECE_W = start_piece_w
-	START_PIECE_H = start_piece_h
-
-	DICE_SIDES = 6
-
-	TILE_SIZE = 16
-	tiles_amount_field = AMOUNT_PIECE_FIELD_SIZE*2 + 3
-	
-	field_offset_idx_y = 2
-	field_offset_idx_x = 2
-	
-	TILES_AMOUNT_H = tiles_amount_field + field_offset_idx_y*2
-	TILES_AMOUNT_W = tiles_amount_field + field_offset_idx_x*2 + 3
+	D_PLAYER_COLOR_TO_PLAYER_COLOR_IDX = {player_color: player_color_idx for player_color_idx, player_color in enumerate(L_PLAYER_COLOR_ALL, 1)}
+	D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR = {player_color_idx: player_color for player_color_idx, player_color in enumerate(L_PLAYER_COLOR_ALL, 1)}
 
 
-	# TODO: calc the needed idx_x for the side constants
-	SIDE_IDX_Y = 2
-	SIDE_IDX_X = TILES_AMOUNT_H
-	SIDE_PIECE_IDX_Y = 3
-	SIDE_PIECE_IDX_X = TILES_AMOUNT_H + 1
-	SIDE_DICE_IDX_Y = 5
-	SIDE_DICE_IDX_X = TILES_AMOUNT_H + 1
+	l_l_player_color_idx = [
+		[1],
 
-	ARROW_RIGHT_IDX_Y = AMOUNT_PIECE_FIELD_SIZE - 1 + field_offset_idx_y
-	ARROW_RIGHT_IDX_X = 0 + field_offset_idx_x
-	ARROW_DOWN_IDX_Y = 0 + field_offset_idx_y
-	ARROW_DOWN_IDX_X = AMOUNT_PIECE_FIELD_SIZE + 3 + field_offset_idx_x
-	ARROW_LEFT_IDX_Y = AMOUNT_PIECE_FIELD_SIZE + 3 + field_offset_idx_y
-	ARROW_LEFT_IDX_X = AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x
-	ARROW_UP_IDX_Y = AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y
-	ARROW_UP_IDX_X = AMOUNT_PIECE_FIELD_SIZE - 1 + field_offset_idx_x
+		[1, 2],
+		[2, 1],
+		[1, 3],
+		[3, 1],
 
-	MAX_STEP_TURN = 100000
+		[1, 2, 3],
+		[1, 3, 2],
+		[2, 1, 3],
+		[2, 3, 1],
+		[3, 2, 1],
+		[3, 1, 2],
 
-	SHOULD_SAVE_IMAGE = False
-	SHOULD_SAVE_DF = False
+		[1, 4, 2, 3],
+		[1, 4, 3, 2],
+		[1, 2, 4, 3],
+		[1, 2, 3, 4],
+		[1, 3, 2, 4],
+		[1, 3, 4, 2],
+	]
 
-	if AMOUNT_PIECE_FIELD_SIZE == 1:
-		ARROW_RIGHT_IDX_X -= 1
-		ARROW_DOWN_IDX_Y -= 1
-		ARROW_LEFT_IDX_X += 1
-		ARROW_UP_IDX_Y += 1
+	l_df_stats_avrg = []
+	for l_player_color_idx in l_l_player_color_idx:
+		amount_player = len(l_player_color_idx)
 
-	PIX_H = TILES_AMOUNT_H * TILE_SIZE
-	PIX_W = TILES_AMOUNT_W * TILE_SIZE
+		l_player_color = [D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR[player_color_idx] for player_color_idx in l_player_color_idx]
 
-	d_tile_name_to_pix = load_tiles()
-	
-	# l_game_field = []
-	l_d_name_to_df = []
-	l_step_turn = []
-	max_game_nr = 5000
-	for game_nr in range(1, max_game_nr+1):
-		print(f'game_nr: {game_nr:5}/{max_game_nr:5}')
-		game_field = GameField(
-			game_nr=game_nr,
-			h=PIX_H,
-			w=PIX_W,
-			l_player_color=L_PLAYER_COLOR,
-			should_save_image=SHOULD_SAVE_IMAGE,
-			should_save_df=SHOULD_SAVE_DF,
-			l_seed_prefix=[],
+		start_piece_w = 0
+		start_piece_h = 0
+		for _ in range(0, 100):
+			start_piece_w += 1
+			if start_piece_w * start_piece_h >= AMOUNT_PIECE_PER_PLAYER:
+				break
+
+			start_piece_h += 1
+			if start_piece_w * start_piece_h >= AMOUNT_PIECE_PER_PLAYER:
+				break
+
+		START_PIECE_W = start_piece_w
+		START_PIECE_H = start_piece_h
+
+		DICE_SIDES = 6
+
+		TILE_SIZE = 16
+		tiles_amount_field = AMOUNT_PIECE_FIELD_SIZE*2 + 3
+		
+		field_offset_idx_y = 2
+		field_offset_idx_x = 2
+		
+		TILES_AMOUNT_H = tiles_amount_field + field_offset_idx_y*2
+		TILES_AMOUNT_W = tiles_amount_field + field_offset_idx_x*2 + 3
+
+
+		# TODO: calc the needed idx_x for the side constants
+		SIDE_IDX_Y = 2
+		SIDE_IDX_X = TILES_AMOUNT_H
+		SIDE_PIECE_IDX_Y = 3
+		SIDE_PIECE_IDX_X = TILES_AMOUNT_H + 1
+		SIDE_DICE_IDX_Y = 5
+		SIDE_DICE_IDX_X = TILES_AMOUNT_H + 1
+
+		ARROW_RIGHT_IDX_Y = AMOUNT_PIECE_FIELD_SIZE - 1 + field_offset_idx_y
+		ARROW_RIGHT_IDX_X = 0 + field_offset_idx_x
+		ARROW_DOWN_IDX_Y = 0 + field_offset_idx_y
+		ARROW_DOWN_IDX_X = AMOUNT_PIECE_FIELD_SIZE + 3 + field_offset_idx_x
+		ARROW_LEFT_IDX_Y = AMOUNT_PIECE_FIELD_SIZE + 3 + field_offset_idx_y
+		ARROW_LEFT_IDX_X = AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_x
+		ARROW_UP_IDX_Y = AMOUNT_PIECE_FIELD_SIZE*2 + 3 - 2 + field_offset_idx_y
+		ARROW_UP_IDX_X = AMOUNT_PIECE_FIELD_SIZE - 1 + field_offset_idx_x
+
+		MAX_STEP_TURN = 100000
+
+		SHOULD_SAVE_IMAGE = False
+		SHOULD_SAVE_DF = False
+
+		if AMOUNT_PIECE_FIELD_SIZE == 1:
+			ARROW_RIGHT_IDX_X -= 1
+			ARROW_DOWN_IDX_Y -= 1
+			ARROW_LEFT_IDX_X += 1
+			ARROW_UP_IDX_Y += 1
+
+		PIX_H = TILES_AMOUNT_H * TILE_SIZE
+		PIX_W = TILES_AMOUNT_W * TILE_SIZE
+
+		d_tile_name_to_pix = load_tiles()
+
+		CPU_COUNT = mp.cpu_count()
+
+		MAX_GAME_NR = 500
+		CHUNK_SIZE = MAX_GAME_NR // ((CPU_COUNT - 1) * 4)
+
+		mult_proc_mng = MultiprocessingManager(cpu_count=CPU_COUNT)
+
+		# # only for testing the responsivness!
+		# mult_proc_mng.test_worker_threads_response()
+
+		def play_some_games(l_game_nr):
+			# l_game_field = []
+			l_d_name_to_df = []
+			l_step_turn = []
+
+			for game_nr in l_game_nr:
+				# print(f'game_nr: {game_nr:5}/{MAX_GAME_NR:5}')
+				game_field = GameField(
+					game_nr=game_nr,
+					h=PIX_H,
+					w=PIX_W,
+					l_player_color=l_player_color,
+					should_save_image=SHOULD_SAVE_IMAGE,
+					should_save_df=SHOULD_SAVE_DF,
+					l_seed_prefix=[],
+				)
+
+				game_field.init_new_game()
+				
+				game_field.play_the_game(max_step_turn=MAX_STEP_TURN)
+				d_name_to_df = game_field.get_df_data()
+				game_field.save_df_data(d_name_to_df=d_name_to_df)
+
+				# l_game_field.append(game_field)
+				l_d_name_to_df.append(d_name_to_df)
+				l_step_turn.append(game_field.step_turn)
+
+			return {
+				'l_d_name_to_df': l_d_name_to_df,
+				'l_step_turn': l_step_turn,
+			}
+
+		print('Define new Function!')
+		mult_proc_mng.define_new_func('func_play_some_games', play_some_games)
+		print('Do the jobs!!')
+		l_game_nr_all = [i for i in range(1, MAX_GAME_NR+1)]
+		l_arguments = [(l_game_nr_all[x:x+CHUNK_SIZE], ) for x in range(0, MAX_GAME_NR, CHUNK_SIZE)]
+		l_ret = mult_proc_mng.do_new_jobs(
+			['func_play_some_games']*len(l_arguments),
+			l_arguments,
 		)
+		print("len(l_ret): {}".format(len(l_ret)))
+		# print("l_ret: {}".format(l_ret))
 
-		game_field.init_new_game()
+		# # testing the responsivness again!
+		# mult_proc_mng.test_worker_threads_response()
+		del mult_proc_mng
+
+		l_d_name_to_df = []
+		l_step_turn = []
+
+		for d in l_ret:
+			l_d_name_to_df.extend(d['l_d_name_to_df'])
+			l_step_turn.extend(d['l_step_turn'])
+
+		amount_step_turn = len(l_step_turn)
+		arr_u, arr_c = np.unique(l_step_turn, return_counts=True)
 		
-		game_field.play_the_game(max_step_turn=MAX_STEP_TURN)
-		d_name_to_df = game_field.get_df_data()
-		game_field.save_df_data(d_name_to_df=d_name_to_df)
+		sum_prod_val = np.sum(arr_u * arr_c)
+		estimation_step_turn = sum_prod_val / amount_step_turn
 
-		# l_game_field.append(game_field)
-		l_d_name_to_df.append(d_name_to_df)
-		l_step_turn.append(game_field.step_turn)
+		print(f"amount_player: {amount_player}")
+		print(f"AMOUNT_PIECE_PER_PLAYER: {AMOUNT_PIECE_PER_PLAYER}")
+		print(f"AMOUNT_PIECE_FINISH_SIZE: {AMOUNT_PIECE_FINISH_SIZE}")
+		print(f"AMOUNT_PIECE_FIELD_SIZE: {AMOUNT_PIECE_FIELD_SIZE}")
+		print(f"l_player_color: {l_player_color}")
+		print(f"l_player_color_idx: {l_player_color_idx}")
 
-	amount_step_turn = len(l_step_turn)
-	arr_u, arr_c = np.unique(l_step_turn, return_counts=True)
-	
-	sum_prod_val = np.sum(arr_u * arr_c)
-	estimation_step_turn = sum_prod_val / amount_step_turn
+		print(f"amount_step_turn: {amount_step_turn}")
+		print(f"sum_prod_val: {sum_prod_val}")
+		print(f"estimation_step_turn: {estimation_step_turn}")
 
-	print(f"AMOUNT_PLAYER: {AMOUNT_PLAYER}")
-	print(f"AMOUNT_PIECE_PER_PLAYER: {AMOUNT_PIECE_PER_PLAYER}")
-	print(f"AMOUNT_PIECE_FINISH_SIZE: {AMOUNT_PIECE_FINISH_SIZE}")
-	print(f"AMOUNT_PIECE_FIELD_SIZE: {AMOUNT_PIECE_FIELD_SIZE}")
-	print(f"L_PLAYER_COLOR: {L_PLAYER_COLOR}")
-	print(f"L_PLAYER_COLOR_IDX: {L_PLAYER_COLOR_IDX}")
+		def get_1d_data_stats(arr):
+			if isinstance(arr, list):
+				arr = np.array(arr, dtype=object)
+			elif isinstance(arr, np.ndarray):
+				pass
+			else:
+				globals()['arr_loc'] = arr
+				assert False and "Need to be either a list or an array! (1d data)"
 
-	print(f"amount_step_turn: {amount_step_turn}")
-	print(f"sum_prod_val: {sum_prod_val}")
-	print(f"estimation_step_turn: {estimation_step_turn}")
+			assert len(arr.shape) == 1
 
-	def get_1d_data_stats(arr):
-		if isinstance(arr, list):
-			arr = np.array(arr, dtype=object)
-		elif isinstance(arr, np.ndarray):
-			pass
-		else:
-			globals()['arr_loc'] = arr
-			assert False and "Need to be either a list or an array! (1d data)"
+			# TODO: add to remove NaN or None values too
 
-		assert len(arr.shape) == 1
+			d = {}
 
-		# TODO: add to remove NaN or None values too
+			d['n'] = arr.shape[0]
+			d['mean'] = np.mean(arr)
+			d['std'] = np.std(arr)
+			d['min'] = np.min(arr)
+			d['median'] = np.median(arr)
+			d['max'] = np.max(arr)
 
-		d = {}
+			return d
 
-		d['n'] = arr.shape[0]
-		d['mean'] = np.mean(arr)
-		d['std'] = np.std(arr)
-		d['min'] = np.min(arr)
-		d['median'] = np.median(arr)
-		d['max'] = np.max(arr)
+		df_player = pd.concat([d['df_player_stats'] for d in l_d_name_to_df])
+		df_player_grpby = df_player.groupby(by=['player_color', 'player_color_idx']).apply(dict).reset_index().rename(mapper={0: 'dict'}, axis=1)
 
-		return d
+		# df_player_grpby['dict'].apply(lambda x: x['amount_dice_roll'].values)
 
-	df_player = pd.concat([d['df_player_stats'] for d in l_d_name_to_df])
-	df_player_grpby = df_player.groupby(by=['player_color', 'player_color_idx']).apply(dict).reset_index().rename(mapper={0: 'dict'}, axis=1)
+		ser_amount_dice_roll = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['amount_dice_roll'].values))
+		ser_amount_move = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['amount_move'].values))
+		ser_place = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['place'].values))
 
-	ser_amount_dice_roll = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['amount_dice_roll'].values))
-	ser_amount_move = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['amount_move'].values))
-	ser_place = df_player_grpby['dict'].apply(lambda x: get_1d_data_stats(x['place'].values))
+		df_stats_avrg = pd.concat([
+				df_player_grpby['player_color'],
+				df_player_grpby['player_color_idx'],
 
-	df_stats_avrg = pd.concat([
-			df_player_grpby['player_color'],
-			df_player_grpby['player_color_idx'],
+				ser_amount_dice_roll.apply(lambda x: x['mean']).rename('amount_dice_roll_mean'),
+				ser_amount_dice_roll.apply(lambda x: x['std']).rename('amount_dice_roll_std'),
+				ser_amount_dice_roll.apply(lambda x: x['median']).rename('amount_dice_roll_median'),
 
-			ser_amount_dice_roll.apply(lambda x: x['mean']).rename('amount_dice_roll_mean'),
-			ser_amount_dice_roll.apply(lambda x: x['std']).rename('amount_dice_roll_std'),
-			ser_amount_dice_roll.apply(lambda x: x['median']).rename('amount_dice_roll_median'),
+				ser_amount_move.apply(lambda x: x['mean']).rename('amount_move_mean'),
+				ser_amount_move.apply(lambda x: x['std']).rename('amount_move_std'),
+				ser_amount_move.apply(lambda x: x['median']).rename('amount_move_median'),
 
-			ser_amount_move.apply(lambda x: x['mean']).rename('amount_move_mean'),
-			ser_amount_move.apply(lambda x: x['std']).rename('amount_move_std'),
-			ser_amount_move.apply(lambda x: x['median']).rename('amount_move_median'),
+				ser_place.apply(lambda x: x['mean']).rename('place_mean'),
+				ser_place.apply(lambda x: x['std']).rename('place_std'),
+				ser_place.apply(lambda x: x['median']).rename('place_median'),
+			],
+			axis=1,
+		).sort_values(by=['player_color_idx']).reset_index(drop=True)
 
-			ser_place.apply(lambda x: x['mean']).rename('place_mean'),
-			ser_place.apply(lambda x: x['std']).rename('place_std'),
-			ser_place.apply(lambda x: x['median']).rename('place_median'),
-		],
-		axis=1,
-	).sort_values(by=['player_color_idx'])
-
-	print(f"df_stats_avrg:\n{df_stats_avrg}")
-
-	# FIXME: change the priorities for each TODO if needed
-	# TODO: make more functional style and oop style (do refactoring)
-	# TODO: write function for the first interactions
-	# TODO: write test cases later for testing the play game_field!
-
-	# TODO: create the images for each tile programable with code, not hardcoded as image! (if possible)
-
+		str_player_color_idx = ','.join(list(map(str, l_player_color_idx)))
+		df_stats_avrg['str_player_color_idx'] = str_player_color_idx
 		
+		df_stats_avrg['amount_piece_per_player'] = AMOUNT_PIECE_PER_PLAYER
+		df_stats_avrg['amount_piece_finish_size'] = AMOUNT_PIECE_FINISH_SIZE
+		df_stats_avrg['amount_piece_field_size'] = AMOUNT_PIECE_FIELD_SIZE
+
+		l_column = df_stats_avrg.columns.tolist()
+		l_column.insert(2, l_column.pop(l_column.index('str_player_color_idx')))
+		l_column.insert(0, l_column.pop(l_column.index('amount_piece_per_player')))
+		l_column.insert(0, l_column.pop(l_column.index('amount_piece_finish_size')))
+		l_column.insert(0, l_column.pop(l_column.index('amount_piece_field_size')))
+		df_stats_avrg = df_stats_avrg[l_column]
+
+		print(f"df_stats_avrg:\n{df_stats_avrg}")
+
+		l_df_stats_avrg.append(df_stats_avrg)
+
+		# FIXME: change the priorities for each TODO if needed
+		# TODO: make more functional style and oop style (do refactoring)
+		# TODO: write function for the first interactions
+		# TODO: write test cases later for testing the play game_field!
+
+		# TODO: create the images for each tile programable with code, not hardcoded as image! (if possible)
