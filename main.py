@@ -1247,8 +1247,8 @@ if __name__ == '__main__':
 
 		CPU_COUNT = mp.cpu_count()
 
-		MAX_GAME_NR = 500
-		CHUNK_SIZE = MAX_GAME_NR // ((CPU_COUNT - 1) * 4)
+		MAX_GAME_NR = 10000
+		CHUNK_SIZE = MAX_GAME_NR // ((CPU_COUNT - 1) * 16)
 
 		mult_proc_mng = MultiprocessingManager(cpu_count=CPU_COUNT)
 
@@ -1385,12 +1385,14 @@ if __name__ == '__main__':
 		df_stats_avrg['amount_piece_per_player'] = AMOUNT_PIECE_PER_PLAYER
 		df_stats_avrg['amount_piece_finish_size'] = AMOUNT_PIECE_FINISH_SIZE
 		df_stats_avrg['amount_piece_field_size'] = AMOUNT_PIECE_FIELD_SIZE
+		df_stats_avrg['max_game_nr'] = MAX_GAME_NR
 
 		l_column = df_stats_avrg.columns.tolist()
 		l_column.insert(2, l_column.pop(l_column.index('str_player_color_idx')))
 		l_column.insert(0, l_column.pop(l_column.index('amount_piece_per_player')))
-		l_column.insert(0, l_column.pop(l_column.index('amount_piece_finish_size')))
-		l_column.insert(0, l_column.pop(l_column.index('amount_piece_field_size')))
+		l_column.insert(1, l_column.pop(l_column.index('amount_piece_finish_size')))
+		l_column.insert(2, l_column.pop(l_column.index('amount_piece_field_size')))
+		l_column.insert(3, l_column.pop(l_column.index('max_game_nr')))
 		df_stats_avrg = df_stats_avrg[l_column]
 
 		print(f"df_stats_avrg:\n{df_stats_avrg}")
@@ -1403,3 +1405,6 @@ if __name__ == '__main__':
 		# TODO: write test cases later for testing the play game_field!
 
 		# TODO: create the images for each tile programable with code, not hardcoded as image! (if possible)
+
+	df_stats_avrg = pd.concat(l_df_stats_avrg, axis=0)
+	# df_stats_avrg.to_csv('/tmp/stats_man_do_not_get_angry.csv', sep=';', index=False)
