@@ -1157,6 +1157,7 @@ if __name__ == '__main__':
 	D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR = {player_color_idx: player_color for player_color_idx, player_color in enumerate(L_PLAYER_COLOR_ALL, 1)}
 
 
+	# play only the games, where there are no repetitions in respect to the game field and game player sequence rotations/reflections
 	l_l_player_color_idx = [
 		[1],
 
@@ -1169,19 +1170,21 @@ if __name__ == '__main__':
 		[1, 3, 2],
 		[2, 1, 3],
 		[2, 3, 1],
-		[3, 2, 1],
 		[3, 1, 2],
+		[3, 2, 1],
 
-		[1, 4, 2, 3],
-		[1, 4, 3, 2],
-		[1, 2, 4, 3],
 		[1, 2, 3, 4],
+		[1, 2, 4, 3],
 		[1, 3, 2, 4],
 		[1, 3, 4, 2],
+		[1, 4, 2, 3],
+		[1, 4, 3, 2],
 	]
 
+	d_t_player_color_idx_to_l_d_name_to_df = {}
 	l_df_stats_avrg = []
 	for l_player_color_idx in l_l_player_color_idx:
+		t_player_color_idx = tuple(l_player_color_idx)
 		amount_player = len(l_player_color_idx)
 
 		l_player_color = [D_PLAYER_COLOR_IDX_TO_PLAYER_COLOR[player_color_idx] for player_color_idx in l_player_color_idx]
@@ -1247,8 +1250,9 @@ if __name__ == '__main__':
 
 		CPU_COUNT = mp.cpu_count()
 
-		MAX_GAME_NR = 10000
-		CHUNK_SIZE = MAX_GAME_NR // ((CPU_COUNT - 1) * 16)
+		MAX_GAME_NR = 100
+		CHUNK_SIZE = MAX_GAME_NR // ((CPU_COUNT - 1) * 2)
+		# CHUNK_SIZE = MAX_GAME_NR // ((CPU_COUNT - 1) * 16)
 
 		mult_proc_mng = MultiprocessingManager(cpu_count=CPU_COUNT)
 
@@ -1309,6 +1313,8 @@ if __name__ == '__main__':
 		for d in l_ret:
 			l_d_name_to_df.extend(d['l_d_name_to_df'])
 			l_step_turn.extend(d['l_step_turn'])
+
+		d_t_player_color_idx_to_l_d_name_to_df[t_player_color_idx] = l_d_name_to_df
 
 		amount_step_turn = len(l_step_turn)
 		arr_u, arr_c = np.unique(l_step_turn, return_counts=True)
